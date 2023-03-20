@@ -1,5 +1,3 @@
-torch==1.7.1
-torchvision==0.8.2
 timm==0.4.12
 Pillow
 blobfile
@@ -9,5 +7,4 @@ pytest
 requests
 einops
 tensorboardX
-deepspeed==0.4.0
 scipy

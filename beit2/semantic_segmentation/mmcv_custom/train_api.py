@@ -63,7 +63,7 @@ def train_segmentor(model,
 
     # use apex fp16 optimizer
     if cfg.optimizer_config.get("type", None) and cfg.optimizer_config["type"] == "DistOptimizerHook":
-        if cfg.optimizer_config.get("use_fp16", False):
+        if cfg.optimizer_config.get("use_fp16", False) and False:
             model, optimizer = apex.amp.initialize(
                 model.cuda(), optimizer, opt_level="O1")
             for m in model.modules():
@@ -83,13 +83,19 @@ def train_segmentor(model,
     else:
         model = MMDataParallel(
             model.cuda(cfg.gpu_ids[0]), device_ids=cfg.gpu_ids)
-
+#    model = torch.compile(model)
     if cfg.get('runner') is None:
         cfg.runner = {'type': 'IterBasedRunner', 'max_iters': cfg.total_iters}
         warnings.warn(
             'config is now expected to have a `runner` section, '
             'please set `runner` in your config.', UserWarning)
-
+    for e in range(10):
+        # traverse the workflow.
+        # e.g. workflow = [('train', 2), ('val', 1)]
+        for i, data_batch in enumerate(data_loaders[0]):
+            print(data_batch.keys())
+            out = model(**data_batch)
+            print(out)
     runner = build_runner(
         cfg.runner,
         default_args=dict(

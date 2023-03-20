@@ -30,7 +30,7 @@ model = dict(
         use_rel_pos_bias=True,
         init_values=0.1,
         drop_path_rate=0.15,
-        rel_pos_bias_interpolation_type=0,
+#        rel_pos_bias_interpolation_type=0,
         out_indices=[3, 5, 7, 11]
     ),
     decode_head=dict(
