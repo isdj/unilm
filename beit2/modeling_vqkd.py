@@ -54,7 +54,7 @@ class VQKD(nn.Module):
         self.decoder = VisionTransformer(**decoder_config)
                 
         self.quantize = NormEMAVectorQuantizer(
-            n_embed=n_embed, embedding_dim=embed_dim, beta=1.0, kmeans_init=quantize_kmeans_init, decay=decay,
+            n_embed=n_embed, embedding_dim=embed_dim, beta=1.0, kmeans_init=quantize_kmeans_init, decay=decay, only_infer=True,
         )
         
         self.patch_size = encoder_config['patch_size']

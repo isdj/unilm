@@ -122,12 +122,18 @@ def norm_ema_inplace(moving_avg, new, decay):
 
 class NormEMAVectorQuantizer(nn.Module):
     def __init__(self, n_embed, embedding_dim, beta, decay=0.99, eps=1e-5, 
-                statistic_code_usage=True, kmeans_init=False, codebook_init_path=''):
+                statistic_code_usage=True, kmeans_init=False, codebook_init_path='', only_infer=False):
         super().__init__()
         self.codebook_dim = embedding_dim
         self.num_tokens = n_embed
         self.beta = beta
         self.decay = decay
+
+        # this is required for two purposes:
+        #   1. Avoid breaking of graph inside init_embed when running XLA - speeding up the run
+        #   2. Fix an error rising in BEiT ob PT2 compilation using the ddp.all_reduce
+
+        self.only_infer = only_infer
         
         # learnable = True if orthogonal_reg_weight > 0 else False
         self.embedding = EmbeddingEMA(self.num_tokens, self.codebook_dim, decay, eps, kmeans_init, codebook_init_path)
@@ -153,13 +159,17 @@ class NormEMAVectorQuantizer(nn.Module):
         z = l2norm(z)
         z_flattened = z.reshape(-1, self.codebook_dim)
         
-        self.embedding.init_embed_(z_flattened)
+        if not self.only_infer:
+            self.embedding.init_embed_(z_flattened)
         
         d = z_flattened.pow(2).sum(dim=1, keepdim=True) + \
             self.embedding.weight.pow(2).sum(dim=1) - 2 * \
             torch.einsum('bd,nd->bn', z_flattened, self.embedding.weight) # 'n d -> d n'
         
         encoding_indices = torch.argmin(d, dim=1)
+
+        if self.only_infer:
+            return None,None,encoding_indices
 
         z_q = self.embedding(encoding_indices).view(z.shape)
         
