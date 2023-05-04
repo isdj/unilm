@@ -6,6 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 import torch_xla.core.xla_model as xm
 import torch_xla.distributed.parallel_loader as pl
 import torch_xla.distributed.xla_multiprocessing as xmp
+from torch_xla.debug.metrics import metrics_report
 
 from beit2.beit_model import BeitTrainingModule
 from beit2.beit_local_dataset import BeitLocalDataset
@@ -41,6 +42,7 @@ def broadcast_params(model, root_rank: int = 0):
 
 def mp_fn(local_rank):
     device = xm.xla_device()
+    print(device)
     mae_model_config = {'patch_size': patch_size, 'in_chans': 1,
                         'depth': 12, 'num_heads': 12, 'embed_dim': 768,
                         'decoder_depth': 2, 'decoder_num_heads': 16, 'decoder_embed_dim': 512}
@@ -54,7 +56,7 @@ def mp_fn(local_rank):
     num_params = sum(p.numel() for p in model.parameters())
     print(f'built model with {num_params / 1e6}M params')
     batch_size=128
-    batch_data = next(iter(DataLoader(BeitLocalDataset(batch_size), batch_size=batch_size, num_workers=0)))
+    dl = pl.MpDeviceLoader(DataLoader(BeitLocalDataset(batch_size * 10000), batch_size=batch_size, num_workers=10), device)
     import time
     model.train()
     log_interval=10
@@ -63,59 +65,8 @@ def mp_fn(local_rank):
     model.to(device)
     # optimizer.to(device) # doesnt work
     loss.to(device)
-
-    for batch_idx in range(1, 1001):
-
-        optimizer.zero_grad(set_to_none=True)
-
-        if isinstance(batch_data, dict):
-            for k, v in batch_data.items():
-                batch_data[k] = v.to(torch.cuda.current_device())
-        else:
-            batch_data = batch_data.to(torch.cuda.current_device())
-        outputs = model(batch_data)
-        l = loss(outputs, batch_data)
-
-        l.backward()
-        xm.reduce_gradients(optimizer)
-        if batch_idx % log_interval == 0 and local_rank == 0:
-            time_passed = time.perf_counter() - t0
-            samples_processed = xm.xrt_world_size() * batch_size * log_interval
-            print(f'{samples_processed / time_passed} samples/second')
-            t0 = time.perf_counter()
-
-
-def main():
-    device = 'cpu'
-    # mae_model_config = {'image_key': image_key, 'patch_size': patch_size, 'NH': NH, 'NW': NW,
-    #                     'encoder_conf': {'depth': 12, 'heads': 12, 'dim': 768, 'gammas_init_values': 0.1},
-    #                     'decoder_conf': {'depth': 2, 'heads': 16, 'dim': 512, 'gammas_init_values': 0.1}}
-
-    mae_model_config = {'patch_size': patch_size, 'in_chans': 1,
-                        'depth': 12, 'num_heads': 12, 'embed_dim': 768,
-                        'decoder_depth': 2, 'decoder_num_heads': 16, 'decoder_embed_dim': 512}
-
-    model = BeitTrainingModule(mae_model_config=mae_model_config)
-    loss = BeitV2Loss()
-    optimizer = torch.optim.AdamW(params=model.parameters(), amsgrad=False)
-
-
-    num_params = sum(p.numel() for p in model.parameters())
-    print(f'built model with {num_params / 1e6}M params')
-    batch_size=128
-    batch_data = next(iter(DataLoader(BeitLocalDataset(batch_size), batch_size=batch_size, num_workers=0)))
-    import time
-    model.train()
-    log_interval=10
-    t0 = time.perf_counter()
-
-    model.to(device)
-    # optimizer.to(device)
-    loss.to(device)
-
-    for batch_idx in range(1, 1001):
-        print(batch_idx)
-
+#    for batch_idx in range(1, 1001):
+    for batch_idx, batch_data in enumerate(dl, start=1):
         optimizer.zero_grad(set_to_none=True)
 
         if isinstance(batch_data, dict):
@@ -127,16 +78,19 @@ def main():
         l = loss(outputs, batch_data)['loss']
 
         l.backward()
-        optimizer.step()
-        if batch_idx % log_interval == 0:
+        xm.optimizer_step(optimizer)
+        if batch_idx % log_interval == 0 and local_rank == 0:
             time_passed = time.perf_counter() - t0
-            samples_processed = batch_size * log_interval
+            samples_processed = xm.xrt_world_size() * batch_size * log_interval
             print(f'{samples_processed / time_passed} samples/second')
+            with open('/tmp/beit_vanilla_met_report.txt', 'w') as f:
+                    f.write(metrics_report())
+
             t0 = time.perf_counter()
 
 if __name__ == '__main__':
     # main()
-    nprocs = 1
+    nprocs = 1 
     xmp.spawn(mp_fn,
               args=(),
-              nprocs=1)
+              nprocs=nprocs)
