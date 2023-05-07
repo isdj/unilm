@@ -210,18 +210,27 @@ class MaskedAutoencoderViT(nn.Module):
 
         return x, mask, ids_restore
 
-    def forward_decoder(self, x, ids_restore):
-        # embed tokens
-        x = self.decoder_embed(x)
+    def forward_decoder(self, x, ids_restore, patch_idxs):
+        cls, emb = x[:, :1], x[:, 1:]
+        enc_cls = self.decoder_embed(cls)
+        enc_emb = self.decoder_embed(emb)
+        B, VIS, D = enc_emb.shape
+        PAD = self.patch_embed.num_patches - VIS
+        full_patches_shuffled = torch.cat([enc_emb, self.mask_token.expand([B, PAD, -1])], dim=1)
+        I = torch.argsort(patch_idxs, axis=-1).unsqueeze(-1).expand([-1, -1, D])
 
-        # append mask tokens to sequence
-        mask_tokens = self.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)
-        x_ = torch.cat([x[:, 1:, :], mask_tokens], dim=1)  # no cls token
-        x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  # unshuffle
-        x = torch.cat([x[:, :1, :], x_], dim=1)  # append cls token
-
-        # add pos embed
-        x = x + self.decoder_pos_embed
+        x = torch.concat([enc_cls, self.decoder_pos_embed + full_patches_shuffled.gather(dim=1, index=I)], dim = 1)
+        # # embed tokens
+        # x = self.decoder_embed(x)
+        #
+        # # append mask tokens to sequence
+        # mask_tokens = self.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)
+        # x_ = torch.cat([x[:, 1:, :], mask_tokens], dim=1)  # no cls token
+        # x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  # unshuffle
+        # x = torch.cat([x[:, :1, :], x_], dim=1)  # append cls token
+        #
+        # # add pos embed
+        # x = x + self.decoder_pos_embed
 
         # apply Transformer blocks
         for blk in self.decoder_blocks:
@@ -239,7 +248,7 @@ class MaskedAutoencoderViT(nn.Module):
 
     def forward(self, imgs, mask_ratio=0.75):
         latent, mask, ids_restore = self.forward_encoder(imgs, mask_ratio)
-        pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*p*3]
+        pred = self.forward_decoder(latent, ids_restore, imgs['all_idx'])  # [N, L, p*p*3]
         # outputs = {'pred': pred, 'mask': mask}
         # return outputs
         return pred
