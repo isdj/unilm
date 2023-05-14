@@ -18,7 +18,6 @@ TokenizerProcessType = "imagenet_norm"
 in_chans = 1
 patch_size = 16
 # vis_ratio = 0.25
-vis_ratio = 1-75/196 # beit's parameter for pretraining
 image_key = "img"
 img_shape = (224, 224)
 NH = img_shape[0]//patch_size

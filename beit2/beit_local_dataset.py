@@ -15,6 +15,7 @@ class BeitLocalDataset(Dataset):
         'vis_mask': torch.randint(low=0, high=2, size=[14, 14], dtype=torch.bool),
         'invis_mask': torch.randint(low=0, high=2, size=[14, 14], dtype=torch.bool)
         }
+        self.random_sample['one_hot'] = torch.nn.functional.one_hot(self.random_sample['vis_idx'],196)
         self._size = size
 
     def __getitem__(self, item):
