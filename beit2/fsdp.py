@@ -113,7 +113,7 @@ def mp_fn(local_rank):
     
 if __name__ == '__main__':
     # main()
-    nprocs = 1
+    nprocs = 8
     xmp.spawn(mp_fn,
               args=(),
               nprocs=nprocs)
