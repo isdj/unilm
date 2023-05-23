@@ -194,7 +194,7 @@ class MaskedAutoencoderViT(nn.Module):
         x = self.patch_embed(x)
 
         # add pos embed w/o cls token
-        x = x + self.pos_embed[:, 1:, :]
+        #x = x + self.pos_embed[:, 1:, :]
 
         # masking: length -> length * mask_ratio
         x = inputs['one_hot'].to(x.dtype) @ x
